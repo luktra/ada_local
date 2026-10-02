@@ -56,9 +56,10 @@ class STTListener:
             self.recorder = AudioToTextRecorder(
                 model=REALTIMESTT_MODEL,  # Use configured model (base, small, etc.)
                 language="en",
-                device="cuda",  # Use GPU for faster processing
+                device="cpu",  # Use GPU for faster processing
                 spinner=False,  # Disable spinner for cleaner output
-                wakeword_backend="pvporcupine",  # Use Porcupine for wake word detection
+                wakeword_backend="openwakeword",
+		openwakeword_inference_framework="onnx",
                 wake_words=WAKE_WORD,  # Built-in wake word detection
                 wake_words_sensitivity=WAKE_WORD_SENSITIVITY,  # Sensitivity (0.0-1.0)
                 on_wakeword_detected=self._on_wakeword_detected,

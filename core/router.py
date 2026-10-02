@@ -12,6 +12,7 @@ warnings.filterwarnings("ignore", message=".*generation flags are not valid.*")
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, logging as transformers_logging
+from peft import PeftModel
 from transformers.utils import get_json_schema
 from typing import Literal, Tuple, Dict, Any
 import time
@@ -22,7 +23,7 @@ from huggingface_hub import snapshot_download
 # Suppress transformers logging
 transformers_logging.set_verbosity_error()
 
-from config import LOCAL_ROUTER_PATH, HF_ROUTER_REPO
+from config import LOCAL_ROUTER_PATH, HF_ROUTER_REPO, HF_BASE_MODEL
 
 # Debug flag - set to True to see Gemma's raw response
 DEBUG_ROUTER = False
@@ -116,13 +117,20 @@ def get_system_info() -> str:
     - Smart home devices (name, on/off status, type)
     - Current weather (temperature, condition, high/low)
     - Recent news headlines (title, category, URL)
-    
+
     Use this when the user asks:
+
+    - "What time is it?"
+    - "What's the current time?"
+    - "What's today's date?"
     - "What's on my schedule today?"
     - "What's my current status?"
     - "What do I have coming up?"
     - "Give me a summary of everything"
-    - Questions about their timers, tasks, or calendar
+    - "Do I have any alarms?"
+    - "What timers do I have?"
+    - "What tasks do I have?"
+    - Questions about their timers, alarms, tasks, or calendar    
     """
     return "result"
 
@@ -167,62 +175,37 @@ VALID_FUNCTIONS = {
 }
 
 
-def ensure_model_available(model_path: str = LOCAL_ROUTER_PATH) -> str:
-    """
-    Ensure the router model is available locally.
-    Downloads from Hugging Face if not found.
-    
-    Returns:
-        str: Path to the model (local or downloaded)
-    """
-    if os.path.exists(model_path) and os.path.isdir(model_path):
-        # Check for essential files
-        if os.path.exists(os.path.join(model_path, "model.safetensors")):
-            return model_path
-    
-    # Download from Hugging Face
-    print(f"[Router] Model not found at {model_path}")
-    print(f"[Router] Downloading from Hugging Face: {HF_ROUTER_REPO}...")
-    
-    try:
-        downloaded_path = snapshot_download(
-            repo_id=HF_ROUTER_REPO,
-            local_dir=model_path,
-            local_dir_use_symlinks=False
-        )
-        print(f"[Router] ✓ Model downloaded to {downloaded_path}")
-        return downloaded_path
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to download model from {HF_ROUTER_REPO}: {e}\n"
-            f"Train the model locally with: python train_function_gemma.py"
-        )
-
-
 class FunctionGemmaRouter:
     """Routes user prompts to appropriate functions using fine-tuned FunctionGemma."""
-    
     def __init__(self, model_path: str = LOCAL_ROUTER_PATH, compile_model: bool = False):
-        # Ensure model is available (download from HF if needed)
-        model_path = ensure_model_available(model_path)
-        
         device = "cuda" if torch.cuda.is_available() else "cpu"
+
         print(f"Loading FunctionGemma Router on {device.upper()}...")
+        print(f"Base model: {HF_BASE_MODEL}")
+        print(f"Adapter: {HF_ROUTER_REPO}")
+
         start = time.time()
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        
-        # CPU often doesn't support bfloat16 natively
+
+        # Load tokenizer from your adapter repository
+        self.tokenizer = AutoTokenizer.from_pretrained(HF_ROUTER_REPO)
+
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
-        
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
+
+        # Load the original FunctionGemma base model
+        base_model = AutoModelForCausalLM.from_pretrained(
+            HF_BASE_MODEL,
             torch_dtype=dtype,
             device_map=device,
         )
+
+        # Apply your A.D.A LoRA adapter
+        self.model = PeftModel.from_pretrained(
+            base_model,
+            HF_ROUTER_REPO,
+        )
+
         self.model.eval()
 
-        
         # Compile for speed (PyTorch 2.0+)
         if compile_model:
             try:
@@ -230,7 +213,7 @@ class FunctionGemmaRouter:
                 print("Model compiled with torch.compile()")
             except Exception as e:
                 print(f"torch.compile() not available: {e}")
-        
+
         print(f"Router loaded in {time.time() - start:.2f}s")
         print(f"Device: {self.model.device}, Dtype: {self.model.dtype}")
     
@@ -242,6 +225,34 @@ class FunctionGemmaRouter:
         Returns:
             Tuple of (function_name, arguments_dict)
         """
+        # Handle deterministic system information requests directly.
+        # These should not be routed through the language model.
+        normalized_prompt = user_prompt.strip().lower()
+
+        time_queries = {
+            "what time is it",
+            "what's the time",
+            "whats the time",
+            "what is the current time",
+            "what's the current time",
+            "whats the current time",
+            "current time",
+        }
+
+        date_queries = {
+            "what date is it",
+            "what's today's date",
+            "whats today's date",
+            "what is today's date",
+            "what day is it",
+            "what's today's date today",
+        }
+
+        if normalized_prompt.rstrip("?!.") in time_queries:
+            return "get_system_info", {}
+
+        if normalized_prompt.rstrip("?!.") in date_queries:
+            return "get_system_info", {}
         # Build messages
         messages = [
             {"role": "developer", "content": SYSTEM_MSG},

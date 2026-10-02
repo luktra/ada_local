@@ -8,3 +8,7 @@ merged_model/
 __pycache__/
 chat_history.db
 realtimesst.log
+.venv/
+data/tasks.db
+ada_run.log
+*.backup

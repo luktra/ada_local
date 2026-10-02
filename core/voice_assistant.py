@@ -71,10 +71,12 @@ class VoiceAssistant(QObject):
             print(f"{CYAN}[VoiceAssistant] ✓ STT initialized{RESET}")
             
             # Ensure TTS is initialized
-            if not tts.piper_exe:
+            if not tts.voice:
                 print(f"{CYAN}[VoiceAssistant] Initializing TTS...{RESET}")
-                tts.initialize()
-                print(f"{CYAN}[VoiceAssistant] ✓ TTS initialized{RESET}")
+                if not tts.initialize():
+                    print(f"{GRAY}[VoiceAssistant] ✗ Failed to initialize TTS.{RESET}")
+                    return False
+                print(f"{CYAN}[VoiceAssistant] ✓ TTS initialized{RESET}")            
             
             print(f"{CYAN}[VoiceAssistant] ✓ Voice assistant initialized successfully{RESET}")
             return True
@@ -205,31 +207,87 @@ class VoiceAssistant(QObject):
             success = result.get("success", False)
             message = result.get("message", "")
             
-            # Enhanced context for get_system_info
+            # Build explicit system context for Qwen.
+            # Include empty states so Qwen does not have to guess.
             if func_name == "get_system_info" and success:
                 data = result.get("data", {})
+
                 context_parts = []
-                if data.get("timers"):
-                    context_parts.append(f"Active timers: {data['timers']}")
-                if data.get("alarms"):
-                    context_parts.append(f"Alarms: {data['alarms']}")
-                if data.get("calendar_today"):
-                    context_parts.append(f"Today's events: {data['calendar_today']}")
-                if data.get("tasks"):
-                    pending = [t for t in data['tasks'] if not t.get('completed')]
-                    context_parts.append(f"Pending tasks: {len(pending)} items")
-                if data.get("smart_devices"):
-                    on_devices = [d['name'] for d in data['smart_devices'] if d.get('is_on')]
-                    context_parts.append(f"Devices on: {on_devices if on_devices else 'none'}")
-                if data.get("weather"):
-                    w = data['weather']
-                    context_parts.append(f"Weather: {w.get('temp')}°F, {w.get('condition')}")
-                if data.get("news"):
-                    news_items = data['news']
-                    if news_items:
-                        news_titles = [item.get('title', '')[:50] for item in news_items[:3]]
-                        context_parts.append(f"Top news: {', '.join(news_titles)}")
-                context_msg = "SYSTEM CONTEXT:\n" + "\n".join(context_parts) if context_parts else "No system information available."
+
+                # Current date and time
+                context_parts.append(
+                    f"Current date and time: {data.get('current_time', 'unknown')}"
+                )
+
+                # Timers
+                timers = data.get("timers", [])
+                context_parts.append(
+                    f"Active timers: {timers if timers else 'none'}"
+                )
+
+                # Alarms
+                alarms = data.get("alarms", [])
+                context_parts.append(
+                    f"Alarms: {alarms if alarms else 'none'}"
+                )
+
+                # Calendar
+                calendar_today = data.get("calendar_today", [])
+                context_parts.append(
+                    f"Today's calendar events: {calendar_today if calendar_today else 'none'}"
+                )
+
+                # Pending tasks only
+                tasks = data.get("tasks", [])
+                pending_tasks = [
+                    task for task in tasks
+                    if not task.get("completed")
+                ]
+                context_parts.append(
+                    f"Pending tasks: {pending_tasks if pending_tasks else 'none'}"
+                )
+
+                # Smart home devices
+                smart_devices = data.get("smart_devices", [])
+                if smart_devices:
+                    on_devices = [
+                        device.get("name")
+                        for device in smart_devices
+                        if device.get("is_on")
+                    ]
+                    context_parts.append(
+                        f"Smart devices: {smart_devices}"
+                    )
+                    context_parts.append(
+                        f"Devices currently on: {on_devices if on_devices else 'none'}"
+                    )
+                else:
+                    context_parts.append("Smart devices: none")
+
+                # Weather
+                weather = data.get("weather")
+                if weather:
+                    context_parts.append(
+                        f"Weather: {weather.get('temp')}°F, {weather.get('condition')}"
+                    )
+                else:
+                    context_parts.append("Weather: unavailable")
+
+                # News
+                news_items = data.get("news", [])
+                if news_items:
+                    news_titles = [
+                        item.get("title", "")[:100]
+                        for item in news_items[:5]
+                    ]
+                    context_parts.append(
+                        f"Recent news: {', '.join(news_titles)}"
+                    )
+                else:
+                    context_parts.append("Recent news: unavailable")
+
+                context_msg = "SYSTEM CONTEXT:\n" + "\n".join(context_parts)
+
             else:
                 context_msg = f"Function {func_name} executed. Success: {success}. Result: {message}"
             
