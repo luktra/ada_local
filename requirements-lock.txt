@@ -64,7 +64,6 @@ pycocoa==25.12.4
 pycparser==3.0
 pyee==13.0.1
 Pygments==2.21.0
-pynvml==13.0.1
 pyobjc==12.2.2
 pyobjc-core==12.2.2
 pyobjc-framework-Accessibility==12.2.2
