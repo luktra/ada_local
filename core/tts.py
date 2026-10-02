@@ -1,21 +1,18 @@
 """
-TTS (Text-to-Speech) module using Piper TTS executable.
+TTS (Text-to-Speech) module using the native Piper Python package.
 Provides streaming sentence-based synthesis with interrupt support.
-Uses pre-built Piper Windows executable for full Windows compatibility.
+Uses the native Piper Python package for cross-platform speech synthesis.
 """
 
 import io
-import os
 import re
 import queue
-import shutil
-import subprocess
 import threading
-import zipfile
 import requests
 from pathlib import Path
 from piper import PiperVoice
 import numpy as np
+
 import sounddevice as sd
 
 # ANSI colors for console output
@@ -78,7 +75,6 @@ class PiperTTS:
         self.interrupt_event = threading.Event()
         self.piper_dir = Path.home() / ".local" / "share" / "piper"
         self.models_dir = self.piper_dir / "voices"
-        self.current_process = None
         self.available = True  # We'll check during initialize
     
     def _download_model(self):
@@ -91,14 +87,18 @@ class PiperTTS:
             print(f"{CYAN}[TTS] Downloading voice model ({self.VOICE_MODEL})...{RESET}")
             r = http_session.get(self.MODEL_URL, stream=True)
             r.raise_for_status()
-            with open(model_path, 'wb') as f:
+            with open(model_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
+            print(f"{GREEN}[TTS] ✓ Voice model downloaded!{RESET}")
+
+        if not config_path.exists():
+            print(f"{CYAN}[TTS] Downloading voice configuration...{RESET}")
             r = http_session.get(self.CONFIG_URL)
             r.raise_for_status()
-            with open(config_path, 'wb') as f:
+            with open(config_path, "wb") as f:
                 f.write(r.content)
-            print(f"{GREEN}[TTS] ✓ Model downloaded!{RESET}")
+            print(f"{GREEN}[TTS] ✓ Voice configuration downloaded!{RESET}")
         
         return str(model_path)
     
@@ -216,12 +216,6 @@ class PiperTTS:
         except:
             pass
         
-        # Kill current piper process if running
-        if self.current_process:
-            try:
-                self.current_process.kill()
-            except:
-                pass
             
     def wait_for_completion(self):
         """Wait for all queued speech to finish."""
