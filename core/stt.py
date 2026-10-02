@@ -36,27 +36,13 @@ class STTListener:
         """Initialize RealTimeSTT with wake word detection."""
         try:
             from RealtimeSTT import AudioToTextRecorder
-            import torch
             
             print(f"{CYAN}[STT] Loading RealTimeSTT...{RESET}")
             
-            # Check CUDA availability
-            cuda_available = torch.cuda.is_available()
-            if cuda_available:
-                cuda_device = torch.cuda.current_device()
-                cuda_name = torch.cuda.get_device_name(cuda_device)
-                print(f"{GREEN}[STT] ✓ CUDA is available (Device: {cuda_name}){RESET}")
-            else:
-                print(f"{YELLOW}[STT] ⚠ CUDA is not available, will use CPU{RESET}")
-            
-            print(f"{CYAN}[STT] Initializing AudioToTextRecorder with device='cuda'...{RESET}")
-            
-            # Initialize RealTimeSTT with built-in wake word detection
-            # Using pvporcupine backend since "jarvis" is a predefined Porcupine wake word
             self.recorder = AudioToTextRecorder(
                 model=REALTIMESTT_MODEL,  # Use configured model (base, small, etc.)
                 language="en",
-                device="cpu",  # Use GPU for faster processing
+                device="cpu",
                 spinner=False,  # Disable spinner for cleaner output
                 wakeword_backend="openwakeword",
 		openwakeword_inference_framework="onnx",
